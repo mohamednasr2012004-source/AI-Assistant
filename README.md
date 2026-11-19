@@ -15,6 +15,80 @@ rewriting, and a Tavily web-search fallback.
 - Hybrid retrieval with reciprocal rank fusion over a persisted Chroma store.
 - Tavily fallback when the model APIs are unavailable.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    A[User message] --> B[Streamlit chat UI]
+    B --> C[Intent guard<br/>Groq gpt-oss-20b]
+    C -->|greeting| D[Greeting reply]
+    C -->|off-topic| E[Off-topic reply]
+    C -->|real estate| F[Query rewriter<br/>Groq gpt-oss-20b]
+    F -->|answer found in history| G[Reply from last 6 turns]
+    F -->|standalone question| H[Metadata filter extraction<br/>OpenRouter free model]
+    H --> I[Dense search<br/>Chroma + MiniLM embeddings]
+    H --> J[Sparse search<br/>BM25]
+    I --> K[Reciprocal rank fusion]
+    J --> K
+    K --> L[Answer generation<br/>OpenRouter free model]
+    L -->|success| M[Answer + sources]
+    L -->|model or API failure| N[Tavily web search fallback]
+    N --> O[Web answer + sources<br/>fallback caption]
+```
+
+### Request lifecycle
+
+1. **Intent guard** classifies the message as `greeting`, `real_estate`, or
+   `off_topic`. Greetings and off-topic messages return immediately.
+2. **Query rewriter** uses the last 6 Q&A turns to rewrite follow-ups into
+   standalone questions, or answers directly when the history is sufficient.
+   If there is no history, the question is used as-is.
+3. **Metadata filter extraction** produces a Chroma `where` filter plus a Python
+   predicate for BM25 results. `language` is never filtered.
+4. **Hybrid retrieval** runs Chroma dense search with the metadata filter and
+   BM25 sparse search with the predicate, then fuses both ranked lists with
+   weighted reciprocal rank fusion.
+5. **Answer generation** answers only from the retrieved context and returns the
+   answer with its sources.
+
+## Models and components
+
+| Stage | Provider | Model / component | Config |
+|---|---|---|---|
+| Intent guard | Groq | `openai/gpt-oss-20b` | `REWRITE_MODEL` |
+| Query rewriter | Groq | `openai/gpt-oss-20b` | `REWRITE_MODEL` |
+| Metadata filters | OpenRouter | `inclusionai/ling-3.2-flash:free` | `MODEL_NAME` |
+| Answer generation | OpenRouter | `inclusionai/ling-3.2-flash:free` | `MODEL_NAME` |
+| Embeddings | Local | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | `EMBEDDING_MODEL` |
+| Sparse retrieval | Local | BM25 (`rank-bm25`) | `SPARSE_TOP_K` |
+| Vector store | Local | Chroma (`chroma_db/`) | `PERSIST_DIR` |
+| Web fallback | Tavily | Search + optional generated answer | `TAVILY_API_KEY` |
+
+All model names and base URLs can be overridden through environment variables or
+Streamlit secrets.
+
+## Fallback behaviour
+
+The Tavily fallback is triggered when the answer model call fails (rate limit,
+timeout, outage, invalid key, etc.):
+
+1. The pipeline catches the model error and logs a warning.
+2. Tavily searches `wasalt.sa`, `darglobal.co.uk`, and `darglobal.com`. If that
+   returns nothing, it retries across the open web.
+3. Tavily's generated answer is used when available; otherwise the top results
+   are formatted as bullet points.
+4. Results are converted to LangChain `Document`s so the UI can show sources,
+   and the response is marked with `fallback: tavily`. The chat shows the note
+   "AI model unavailable — answered using live web search (Tavily)."
+5. Brand names and domains are neutralised in the fallback answer and titles.
+
+Other stages degrade gracefully instead of failing the request:
+
+- Intent guard failure → continue as `real_estate`.
+- Rewriter failure → use the original question.
+- Filter extraction failure → continue with unfiltered retrieval.
+- Tavily unavailable or failing → return a polite "try again later" message.
+
 ## Project structure
 
 ```text
