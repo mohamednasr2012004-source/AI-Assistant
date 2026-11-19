@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# uv lock is generated locally; Streamlit Cloud uses requirements.txt
+/uv.lock
+
 # Local credentials
 .env
 
