@@ -19,6 +19,9 @@ st.set_page_config(
 load_dotenv()
 
 EXAMPLES = [
+    "hello",
+    "what is the weather today?",
+    "show me apartments in Jeddah",
     "أريد فيلا للبيع في الطائف",
     "ما هي المشاريع المتاحة في عمان؟",
     "عايز شقة للإيجار في جدة؟",
@@ -50,6 +53,9 @@ with st.sidebar:
     )
 
     st.header("Example questions")
+    st.caption(
+        "These questions test all cases: guardrails, off-topic, and the main chatbot."
+    )
     for example in EXAMPLES:
         if st.button(example, use_container_width=True):
             st.session_state.pending_prompt = example

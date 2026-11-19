@@ -131,6 +131,24 @@ Run the app:
 streamlit run app/app.py
 ```
 
+## Docker
+
+The image uses the `ghcr.io/astral-sh/uv` Python 3.12 base, installs CPU-only
+PyTorch, pre-downloads the embedding model, and includes `chroma_db/` and the
+corpus. It honours a cloud-provided `PORT` and defaults to `8501`.
+
+```powershell
+docker build -t ai-real-estate-assistant .
+docker run --rm -p 8501:8501 `
+  -e OPENROUTER_API_KEY=... `
+  -e GROQ_API_KEY=... `
+  -e TAVILY_API_KEY=... `
+  ai-real-estate-assistant
+```
+
+Open `http://localhost:8501`. On a platform that injects `PORT`, pass `-e PORT`
+or let the platform set it; the container binds to `0.0.0.0`.
+
 ## Streamlit Cloud deployment
 
 1. Push this repository to GitHub.
